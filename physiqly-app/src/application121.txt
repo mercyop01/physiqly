@@ -1,0 +1,299 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Line } from 'react-chartjs-2';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
+
+// --- Main App Component ---
+export default function App() {
+  const [pageState, setPageState] = useState('landing'); // 'landing', 'auth', 'dashboard'
+  const [authMode, setAuthMode] = useState('signin'); // 'signin' or 'register'
+  const [loggedInUser, setLoggedInUser] = useState(null);
+
+  const handleLoginSuccess = (user) => {
+    setLoggedInUser(user);
+    setPageState('dashboard');
+  };
+
+  const handleLogout = () => {
+    setLoggedInUser(null);
+    setPageState('landing');
+  };
+  
+  const showAuth = (mode) => {
+    setAuthMode(mode);
+    setPageState('auth');
+  };
+
+  // Add a style tag to import fonts and set the background
+  const AppStyles = () => (
+    <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Lato:wght@400;700&display=swap');
+      body {
+        background-color: #F5F5DC; /* Parchment color */
+      }
+      .font-heading { font-family: 'Cinzel', serif; }
+      .font-body { font-family: 'Lato', sans-serif; }
+    `}</style>
+  );
+
+  if (pageState === 'landing') {
+    return <><AppStyles /><LandingPage onShowAuth={showAuth} /></>;
+  }
+
+  if (pageState === 'auth') {
+    return <><AppStyles /><AuthPage initialMode={authMode} onLoginSuccess={handleLoginSuccess} /></>;
+  }
+  
+  if (pageState === 'dashboard' && loggedInUser) {
+    return <><AppStyles /><Dashboard user={loggedInUser} onLogout={handleLogout} /></>;
+  }
+
+  return <><AppStyles /><LandingPage onShowAuth={showAuth} /></>;
+}
+
+
+// --- Page Components ---
+
+const LandingPage = ({ onShowAuth }) => (
+    <div className="bg-[#F5F5DC] text-slate-800 min-h-screen flex flex-col font-body">
+      <header className="container mx-auto px-6 py-4">
+        <nav className="flex justify-between items-center">
+          <span className="text-2xl font-bold font-heading text-[#8B0000]">Physiqly</span>
+          <div>
+            <button onClick={() => onShowAuth('signin')} className="text-slate-600 hover:text-slate-900 px-4 py-2 font-semibold">Log In</button>
+            <button onClick={() => onShowAuth('register')} className="bg-slate-800 text-white font-semibold px-4 py-2 rounded-md hover:bg-slate-700">Sign Up</button>
+          </div>
+        </nav>
+      </header>
+      <main className="flex-grow flex items-center justify-center text-center -mt-16">
+        <div>
+          <h1 className="text-5xl md:text-7xl font-bold leading-tight font-heading text-[#36454F]">Achieve Your Fitness Goals.</h1>
+          <p className="mt-4 text-lg text-slate-600 max-w-2xl mx-auto">An AI-powered fitness companion designed for human-to-human motivation and data-driven results.</p>
+          <button onClick={() => onShowAuth('register')} className="mt-8 bg-[#8B0000] text-white font-semibold px-8 py-3 rounded-md hover:bg-[#A52A2A] text-lg transition-colors">Join Now</button>
+        </div>
+      </main>
+    </div>
+);
+
+const AuthPage = ({ initialMode, onLoginSuccess }) => {
+    const [activeTab, setActiveTab] = useState(initialMode);
+    return (
+        <div className="bg-[#F5F5DC] min-h-screen flex items-center justify-center p-4 font-body">
+            <div className="max-w-md w-full">
+                <Auth activeTab={activeTab} setActiveTab={setActiveTab} onLoginSuccess={onLoginSuccess} />
+            </div>
+        </div>
+    );
+};
+
+
+// --- Dashboard & Components ---
+
+const Dashboard = ({ user, onLogout }) => {
+    const [view, setView] = useState('overview');
+    const [exercises, setExercises] = useState([]);
+    const [dailyLog, setDailyLog] = useState(null);
+    const [fitnessGoal, setFitnessGoal] = useState(null);
+    const [weightHistory, setWeightHistory] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchAllData = async () => {
+            setLoading(true);
+            try {
+                const [exercisesRes, logRes, goalRes, weightRes] = await Promise.all([
+                    fetch('http://localhost:8081/api/exercises'),
+                    fetch(`http://localhost:8082/api/logs/${user.id}/today`),
+                    fetch(`http://localhost:8083/api/goals/${user.id}`),
+                    fetch(`http://localhost:8083/api/progress/${user.id}`)
+                ]);
+
+                if (exercisesRes.ok) setExercises(await exercisesRes.json());
+                if (logRes.ok) setDailyLog(await logRes.json());
+                if (goalRes.ok && goalRes.status !== 204) setFitnessGoal(await goalRes.json());
+                if (weightRes.ok) setWeightHistory(await weightRes.json());
+
+            } catch (error) {
+                console.error("Failed to fetch dashboard data:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchAllData();
+    }, [user.id]);
+
+    const renderView = () => {
+        if (loading) { return <div className="text-center p-10 text-slate-500">Loading your dashboard...</div>; }
+        switch (view) {
+            case 'workouts': return <WorkoutPlanner initialExercises={exercises} setExercises={setExercises} />;
+            case 'calories': return <CalorieTracker initialLog={dailyLog} setLog={setDailyLog} />;
+            case 'goals': return <GoalPlanner initialGoal={fitnessGoal} userId={user.id} onGoalUpdate={setFitnessGoal} />;
+            case 'progress': return <ProgressTracker initialHistory={weightHistory} setHistory={setWeightHistory} userId={user.id} />;
+            default: return <Overview goal={fitnessGoal} log={dailyLog} />;
+        }
+    };
+
+    return (
+        <div className="bg-[#F5F5DC] text-slate-800 min-h-screen font-body">
+            <Header user={user} onLogout={onLogout} />
+            <main className="container mx-auto px-4 py-8">
+                 <DashboardNav currentView={view} setView={setView} />
+                 <div className="mt-8"> {renderView()} </div>
+            </main>
+        </div>
+    );
+};
+
+const DashboardNav = ({ currentView, setView }) => {
+  const navItems = ['overview', 'workouts', 'calories', 'goals', 'progress'];
+  return (
+    <div className="bg-white rounded-lg shadow-md border border-stone-200 p-2">
+      <nav className="flex items-center justify-center flex-wrap gap-2">
+        {navItems.map(item => (
+          <button key={item} onClick={() => setView(item)}
+            className={`capitalize px-4 py-2 rounded-md font-semibold text-sm transition-colors ${
+              currentView === item ? 'bg-[#8B0000] text-white shadow' : 'text-slate-600 hover:bg-stone-100'
+            }`}
+          >{item}</button>
+        ))}
+      </nav>
+    </div>
+  );
+};
+
+const Card = ({ children, title, welcomeMessage }) => (
+    <div className="bg-white p-6 rounded-xl shadow-lg border border-stone-200">
+        <h2 className="text-xl font-bold font-heading text-[#8B0000] mb-1">{title}</h2>
+        {welcomeMessage && <p className="text-slate-600 mb-4">{welcomeMessage}</p>}
+        {children}
+    </div>
+);
+
+const Overview = ({ goal, log }) => {
+    const totalCalories = log ? log.breakfastCalories + log.lunchCalories + log.eveningSnackCalories + log.dinnerCalories : 0;
+    return (
+        <Card title="Today's Overview" welcomeMessage="Here is your daily summary.">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="bg-stone-50 p-4 rounded-lg border border-stone-200">
+                    <p className="text-sm text-slate-500">Calories Consumed</p>
+                    <p className="text-2xl font-bold text-[#8B0000]">{totalCalories} / {log ? log.calorieGoal : '...'} kcal</p>
+                </div>
+                <div className="bg-stone-50 p-4 rounded-lg border border-stone-200">
+                    <p className="text-sm text-slate-500">Weight Goal</p>
+                    {goal ? <p className="text-2xl font-bold text-[#8B0000]">{goal.currentWeight}kg &rarr; {goal.targetWeight}kg</p> : <p className="text-lg text-slate-600">No goal set yet.</p>}
+                </div>
+            </div>
+        </Card>
+    );
+};
+
+const CalorieTracker = ({ initialLog, setLog }) => {
+    const [isEditing, setIsEditing] = useState(false);
+    const [localLog, setLocalLog] = useState(initialLog);
+
+    useEffect(() => { setLocalLog(initialLog) }, [initialLog]);
+
+    if (!localLog) return <Card title="Today's Calorie Tracker">Loading tracker...</Card>;
+    
+    const totalCalories = localLog.breakfastCalories + localLog.lunchCalories + localLog.eveningSnackCalories + localLog.dinnerCalories;
+
+    const handleLogChange = (e) => {
+        const { name, value } = e.target;
+        setLocalLog(prev => ({...prev, [name]: Number(value) || 0}));
+    };
+
+    const handleSaveChanges = async () => {
+        try {
+            const response = await fetch('http://localhost:8082/api/logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(localLog) });
+            if (!response.ok) throw new Error('Failed to save log');
+            const updatedLog = await response.json();
+            setLog(updatedLog); // This updates the main dashboard state
+            setIsEditing(false);
+        } catch (error) { console.error("Error saving calorie log:", error); }
+    };
+    
+    return (
+        <Card title="Today's Calorie Tracker" welcomeMessage="Log your meals to stay on track with your goals.">
+            <div className="text-center mb-6">
+                <p className="text-4xl font-bold text-[#8B0000]">{totalCalories} <span className="text-2xl text-slate-500">/ {localLog.calorieGoal}</span></p>
+                <p className="text-slate-600">Total Calories Consumed</p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                {['breakfast', 'lunch', 'eveningSnack', 'dinner'].map(meal => (
+                    <div key={meal}>
+                        <label className="capitalize text-sm font-semibold text-slate-600 block mb-1">{meal.replace('Snack', ' Snack')}</label>
+                        <input type="number" name={`${meal}Calories`} value={localLog[`${meal}Calories`]} onChange={handleLogChange} disabled={!isEditing} className="w-full p-2 bg-stone-50 border border-stone-300 rounded-lg focus:ring-2 focus:ring-[#8B0000] outline-none disabled:bg-stone-200 disabled:text-slate-500"/>
+                    </div>
+                ))}
+            </div>
+            {isEditing ? ( <button onClick={handleSaveChanges} className="w-full bg-[#8B0000] text-white font-semibold p-3 rounded-lg hover:bg-[#A52A2A] transition-colors">Save Changes</button> ) : ( <button onClick={() => setIsEditing(true)} className="w-full bg-slate-200 text-slate-700 font-semibold p-3 rounded-lg hover:bg-slate-300 transition-colors">Edit</button> )}
+        </Card>
+    );
+};
+
+const ProgressTracker = ({ initialHistory, setHistory, userId }) => {
+    const [newWeight, setNewWeight] = useState('');
+
+    const handleAddWeight = async (e) => {
+        e.preventDefault();
+        if (!newWeight) return;
+        const newEntry = { userId, date: new Date().toISOString().split('T')[0], weight: parseFloat(newWeight) };
+        try {
+            const response = await fetch('http://localhost:8083/api/progress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newEntry) });
+            if (!response.ok) throw new Error('Failed to add weight entry');
+            const addedEntry = await response.json();
+            setHistory(prev => [...prev, addedEntry].sort((a,b) => a.date.localeCompare(b.date)));
+            setNewWeight('');
+        } catch (error) { console.error("Error adding weight entry:", error); }
+    };
+
+    const chartData = { labels: initialHistory.map(entry => entry.date), datasets: [ { label: 'Weight (kg)', data: initialHistory.map(entry => entry.weight), fill: true, borderColor: '#8B0000', backgroundColor: 'rgba(139, 0, 0, 0.2)', tension: 0.1, pointBackgroundColor: '#8B0000' } ], };
+    const chartOptions = { maintainAspectRatio: false, scales: { x: { ticks: { color: '#36454F'}, grid: { color: 'rgba(54, 69, 79, 0.1)' } }, y: { ticks: { color: '#36454F'}, grid: { color: 'rgba(54, 69, 79, 0.1)' } } }, plugins: { legend: { labels: { color: '#36454F' } } } };
+
+    return ( <Card title="Your Progress" welcomeMessage="Track your weight over time to see your hard work pay off."> <div className="mb-4" style={{height: '250px'}}> {initialHistory.length > 1 ? <Line data={chartData} options={chartOptions} /> : <div className="flex items-center justify-center h-full text-slate-500">Log at least two weight entries to see your progress chart.</div>} </div> <form onSubmit={handleAddWeight} className="flex gap-2"> <input type="number" step="0.1" value={newWeight} onChange={e => setNewWeight(e.target.value)} placeholder="Enter today's weight (kg)" className="flex-grow p-2 bg-stone-50 border border-stone-300 rounded-lg focus:ring-2 focus:ring-[#8B0000] outline-none" /> <button type="submit" className="bg-[#8B0000] text-white font-semibold px-4 rounded-lg hover:bg-[#A52A2A] transition-colors">Log Weight</button> </form> </Card> );
+};
+
+const Header = ({ user, onLogout }) => ( <header className="bg-white/80 backdrop-blur-md sticky top-0 z-10 shadow-sm border-b border-stone-200"> <nav className="container mx-auto px-4 py-3 flex justify-between items-center"> <span className="text-2xl font-bold font-heading text-[#8B0000]">Physiqly</span> <div> {user ? ( <button onClick={onLogout} className="bg-slate-800 text-white font-semibold py-2 px-4 rounded-md hover:bg-slate-700 transition-colors"> Logout </button> ) : null } </div> </nav> </header> );
+const Auth = ({ activeTab, setActiveTab, onLoginSuccess }) => {
+    const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+    const [registerForm, setRegisterForm] = useState({ firstName: '', lastName: '', email: '', password: '' });
+    const [authMessage, setAuthMessage] = useState({ type: '', text: '' });
+    const BACKEND_URL = 'http://localhost:8080';
+
+    const handleAuthInputChange = (e, formSetter) => {
+        const { name, value } = e.target;
+        formSetter(prev => ({ ...prev, [name]: value }));
+    };
+    
+    const handleRegister = async (e) => {
+        e.preventDefault();
+        setAuthMessage({type: '', text: ''});
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/users/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(registerForm) });
+            if (res.status === 409) throw new Error('Email address already in use.');
+            if (!res.ok) throw new Error('Registration failed');
+            setAuthMessage({ type: 'success', text: 'Registration successful! Please sign in.' });
+            setActiveTab('signin');
+        } catch (error) {
+            setAuthMessage({ type: 'error', text: error.message || 'Registration failed' });
+        }
+    };
+
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        setAuthMessage({type: '', text: ''});
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/users/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(loginForm) });
+            if (!res.ok) throw new Error('Invalid email or password');
+            const user = await res.json();
+            onLoginSuccess(user);
+        } catch (error) {
+            setAuthMessage({ type: 'error', text: error.message || 'Login failed' });
+        }
+    };
+    
+    return ( <div className="bg-white p-8 rounded-xl shadow-lg border border-stone-200 text-slate-800"> <div className="flex border-b border-stone-200 mb-6"> <button onClick={() => setActiveTab('signin')} className={`py-3 px-6 font-semibold transition-colors ${activeTab === 'signin' ? 'text-[#8B0000] border-b-2 border-[#8B0000]' : 'text-slate-500'}`}>Sign In</button> <button onClick={() => setActiveTab('register')} className={`py-3 px-6 font-semibold transition-colors ${activeTab === 'register' ? 'text-[#8B0000] border-b-2 border-[#8B0000]' : 'text-slate-500'}`}>Register</button> </div> {authMessage.text && ( <div className={`p-3 rounded-md mb-4 text-sm ${authMessage.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}> {authMessage.text} </div> )} {activeTab === 'signin' ? ( <form onSubmit={handleLogin}> <input type="email" name="email" value={loginForm.email} onChange={(e) => handleAuthInputChange(e, setLoginForm)} placeholder="Email" required className="w-full p-3 bg-stone-50 border border-stone-300 rounded-lg mb-4 focus:ring-2 focus:ring-[#8B0000] outline-none" /> <input type="password" name="password" value={loginForm.password} onChange={(e) => handleAuthInputChange(e, setLoginForm)} placeholder="Password" required className="w-full p-3 bg-stone-50 border border-stone-300 rounded-lg mb-4 focus:ring-2 focus:ring-[#8B0000] outline-none" /> <button type="submit" className="w-full bg-[#8B0000] text-white font-semibold p-3 rounded-lg hover:bg-[#A52A2A] transition-colors">Sign In</button> </form> ) : ( <form onSubmit={handleRegister}> <input type="text" name="firstName" value={registerForm.firstName} onChange={(e) => handleAuthInputChange(e, setRegisterForm)} placeholder="First Name" required className="w-full p-3 bg-stone-50 border border-stone-300 rounded-lg mb-4 focus:ring-2 focus:ring-[#8B0000] outline-none" /> <input type="text" name="lastName" value={registerForm.lastName} onChange={(e) => handleAuthInputChange(e, setRegisterForm)} placeholder="Last Name" required className="w-full p-3 bg-stone-50 border border-stone-300 rounded-lg mb-4 focus:ring-2 focus:ring-[#8B0000] outline-none" /> <input type="email" name="email" value={registerForm.email} onChange={(e) => handleAuthInputChange(e, setRegisterForm)} placeholder="Email" required className="w-full p-3 bg-stone-50 border border-stone-300 rounded-lg mb-4 focus:ring-2 focus:ring-[#8B0000] outline-none" /> <input type="password" name="password" value={registerForm.password} onChange={(e) => handleAuthInputChange(e, setRegisterForm)} placeholder="Password" required className="w-full p-3 bg-stone-50 border border-stone-300 rounded-lg mb-4 focus:ring-2 focus:ring-[#8B0000] outline-none" /> <button type="submit" className="w-full bg-[#8B0000] text-white font-semibold p-3 rounded-lg hover:bg-[#A52A2A] transition-colors">Create Account</button> </form> )} </div> ); };
+const WorkoutPlanner = ({ initialExercises, setExercises }) => { const [newExercise, setNewExercise] = useState({ name: '', description: '', targetMuscle: '', equipment: '', difficulty: 'Beginner' }); const handleInputChange = (e) => { const { name, value } = e.target; setNewExercise(prev => ({ ...prev, [name]: value })); }; const handleAddExercise = async (e) => { e.preventDefault(); try { const response = await fetch('http://localhost:8081/api/exercises', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newExercise), }); if (!response.ok) throw new Error('Failed to add exercise'); const addedExercise = await response.json(); setExercises(prev => [...prev, addedExercise]); setNewExercise({ name: '', description: '', targetMuscle: '', equipment: '', difficulty: 'Beginner' }); } catch (error) { console.error("Error adding exercise:", error); } }; return ( <Card title="Workout Planner" welcomeMessage="Design your workouts and discover new exercises."> <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> <div> <h3 className="font-semibold text-slate-700 mb-2">Available Exercises</h3> <ul className="space-y-3 max-h-96 overflow-y-auto pr-2"> {initialExercises.length > 0 ? initialExercises.map(ex => ( <li key={ex.id} className="p-3 bg-stone-50 rounded-lg border border-stone-200"> <p className="font-bold text-slate-800">{ex.name}</p> <p className="text-sm text-slate-600">{ex.targetMuscle} | {ex.difficulty}</p> </li> )) : <p className="text-slate-500">No exercises found.</p>} </ul> </div> <form onSubmit={handleAddExercise} className="space-y-3"> <h3 className="font-semibold text-slate-700">Add a New Exercise</h3> <input type="text" name="name" value={newExercise.name} onChange={handleInputChange} placeholder="Exercise Name" required className="w-full p-2 bg-stone-50 border border-stone-300 rounded-lg focus:ring-2 focus:ring-[#8B0000] outline-none" /> <textarea name="description" value={newExercise.description} onChange={handleInputChange} placeholder="Description" className="w-full p-2 bg-stone-50 border border-stone-300 rounded-lg focus:ring-2 focus:ring-[#8B0000] outline-none h-20"></textarea> <input type="text" name="targetMuscle" value={newExercise.targetMuscle} onChange={handleInputChange} placeholder="Target Muscle" required className="w-full p-2 bg-stone-50 border border-stone-300 rounded-lg focus:ring-2 focus:ring-[#8B0000] outline-none" /> <input type="text" name="equipment" value={newExercise.equipment} onChange={handleInputChange} placeholder="Equipment" required className="w-full p-2 bg-stone-50 border border-stone-300 rounded-lg focus:ring-2 focus:ring-[#8B0000] outline-none" /> <select name="difficulty" value={newExercise.difficulty} onChange={handleInputChange} className="w-full p-2 bg-white border border-stone-300 rounded-lg focus:ring-2 focus:ring-[#8B0000] outline-none"> <option>Beginner</option> <option>Intermediate</option> <option>Advanced</option> </select> <button type="submit" className="w-full bg-[#8B0000] text-white font-semibold p-3 rounded-lg hover:bg-[#A52A2A] transition-colors">Add Exercise</button> </form> </div> </Card> ); };
+const GoalPlanner = ({ initialGoal, userId, onGoalUpdate }) => { const [goal, setGoal] = useState(initialGoal); const [form, setForm] = useState(initialGoal || { currentWeight: '', targetWeight: '', height: '', targetDate: '' }); const [isEditing, setIsEditing] = useState(!initialGoal); useEffect(() => { setGoal(initialGoal); setForm(initialGoal || { currentWeight: '', targetWeight: '', height: '', targetDate: '' }); setIsEditing(!initialGoal); }, [initialGoal]); const handleInputChange = (e) => { const { name, value } = e.target; setForm(prev => ({ ...prev, [name]: value })); }; const handleGoalSubmit = async (e) => { e.preventDefault(); try { const payload = { ...form, userId }; const response = await fetch('http://localhost:8083/api/goals', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), }); if (!response.ok) throw new Error('Failed to save goal'); const updatedGoal = await response.json(); onGoalUpdate(updatedGoal); } catch (error) { console.error("Error saving goal:", error); } }; return ( <Card title="Fitness Goal Planner" welcomeMessage="Set your goals to create a personalized nutrition plan."> <div className="flex justify-end items-center mb-4"> {goal && <button onClick={() => setIsEditing(!isEditing)} className="text-sm font-semibold text-[#8B0000] hover:text-[#A52A2A]">{isEditing ? 'Cancel' : 'Edit'}</button>} </div> {!isEditing && goal ? ( <div className="space-y-4"> <div> <p className="text-sm text-slate-500">Your Daily Plan</p> <p className="text-2xl font-bold text-[#8B0000]">{goal.calculatedDailyCalories} <span className="text-lg">kcal</span></p> </div> <div className="grid grid-cols-3 gap-4 text-center"> <div><p className="font-bold">{goal.calculatedProteinGrams}g</p><p className="text-sm text-slate-500">Protein</p></div> <div><p className="font-bold">{goal.calculatedCarbsGrams}g</p><p className="text-sm text-slate-500">Carbs</p></div> <div><p className="font-bold">{goal.calculatedFatGrams}g</p><p className="text-sm text-slate-500">Fat</p></div> </div> <div className="pt-4 border-t border-stone-200 mt-4"> <p><span className="font-semibold text-slate-700">Current Weight:</span> {goal.currentWeight} kg</p> <p><span className="font-semibold text-slate-700">Target Weight:</span> {goal.targetWeight} kg</p> <p><span className="font-semibold text-slate-700">Target Date:</span> {goal.targetDate}</p> </div> </div> ) : ( <form onSubmit={handleGoalSubmit} className="space-y-3"> <p className="text-sm text-slate-600">{goal ? 'Update your goal:' : 'Set a new goal to calculate your plan.'}</p> <input type="number" step="0.1" name="currentWeight" value={form.currentWeight} onChange={handleInputChange} placeholder="Current Weight (kg)" required className="w-full p-2 bg-stone-50 border border-stone-300 rounded-lg focus:ring-2 focus:ring-[#8B0000] outline-none" /> <input type="number" step="0.1" name="targetWeight" value={form.targetWeight} onChange={handleInputChange} placeholder="Target Weight (kg)" required className="w-full p-2 bg-stone-50 border border-stone-300 rounded-lg focus:ring-2 focus:ring-[#8B0000] outline-none" /> <input type="number" name="height" value={form.height} onChange={handleInputChange} placeholder="Height (cm)" required className="w-full p-2 bg-stone-50 border border-stone-300 rounded-lg focus:ring-2 focus:ring-[#8B0000] outline-none" /> <input type="date" name="targetDate" value={form.targetDate} onChange={handleInputChange} required className="w-full p-2 bg-stone-50 border border-stone-300 rounded-lg focus:ring-2 focus:ring-[#8B0000] outline-none" /> <button type="submit" className="w-full bg-[#8B0000] text-white font-semibold p-3 rounded-lg hover:bg-[#A52A2A] transition-colors">{goal ? 'Update Plan' : 'Calculate My Plan'}</button> </form> )} </Card> ); };
+

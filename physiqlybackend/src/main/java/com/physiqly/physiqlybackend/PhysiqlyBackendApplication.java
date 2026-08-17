@@ -10,6 +10,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -160,13 +161,12 @@ class CommunityController {
 @RestController @RequestMapping("/api/ai") @CrossOrigin(origins = "http://localhost:5173")
 class AiController {
     private final WebClient webClient; private final ObjectMapper objectMapper = new ObjectMapper();
-    private final String deepseekApiUrl = "https://api.deepseek.com/chat/completions";
-    // IMPORTANT: You must get your own API key from DeepSeek and paste it here.
-    private final String apiKey = "YOUR_DEEPSEEK_API_KEY"; 
-    public AiController(WebClient.Builder builder) { this.webClient = builder.baseUrl(deepseekApiUrl).build(); }
+    @Value("${groq.api.key}")
+    private String apiKey;
+    public AiController(WebClient.Builder builder) { this.webClient = builder.baseUrl("https://api.groq.com/openai/v1") }
     @PostMapping("/chat") public Mono<ResponseEntity<String>> chat(@RequestBody String prompt) {
         String sysPrompt = "You are Physiqly, a friendly, encouraging, and knowledgeable AI fitness coach. Provide helpful and safe advice on workouts, nutrition, and general fitness. Keep answers concise. Do not give medical advice.";
-        Object payload = new Object() { public final String model = "deepseek-chat"; public final Object[] messages = { new Object() { public final String role = "system"; public final String content = sysPrompt; }, new Object() { public final String role = "user"; public final String content = prompt; } }; };
+        Object payload = new Object() { public final String model = "llama3-8b-8192"; public final Object[] messages = { new Object() { public final String role = "system"; public final String content = sysPrompt; }, new Object() { public final String role = "user"; public final String content = prompt; } }; };
         return this.webClient.post().header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey).contentType(MediaType.APPLICATION_JSON).bodyValue(payload).retrieve().bodyToMono(String.class)
             .map(this::extractText).map(ResponseEntity::ok).onErrorResume(e -> Mono.just(ResponseEntity.status(500).body("Error: " + e.getMessage())));
     }

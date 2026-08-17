@@ -163,7 +163,7 @@ class AiController {
     private final WebClient webClient; private final ObjectMapper objectMapper = new ObjectMapper();
     @Value("${groq.api.key}")
     private String apiKey;
-    public AiController(WebClient.Builder builder) { this.webClient = builder.baseUrl("https://api.groq.com/openai/v1") }
+    public AiController(WebClient.Builder builder) { this.webClient = builder.baseUrl("https://api.groq.com/openai/v1").build(); }
     @PostMapping("/chat") public Mono<ResponseEntity<String>> chat(@RequestBody String prompt) {
         String sysPrompt = "You are Physiqly, a friendly, encouraging, and knowledgeable AI fitness coach. Provide helpful and safe advice on workouts, nutrition, and general fitness. Keep answers concise. Do not give medical advice.";
         Object payload = new Object() { public final String model = "llama3-8b-8192"; public final Object[] messages = { new Object() { public final String role = "system"; public final String content = sysPrompt; }, new Object() { public final String role = "user"; public final String content = prompt; } }; };
